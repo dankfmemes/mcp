@@ -1,0 +1,11 @@
+bin/
+lib/
+logs/
+reobf/
+src/
+*.pyc
+*.pyo
+__pycache__/
+env/
+venv/
+temp/
