@@ -1068,6 +1068,8 @@ class Commands(object):
         binlk = {CLIENT: self.binclient, SERVER: self.binserver}
         testlk = {CLIENT: self.testclient, SERVER: self.testserver}
 
+        if side == SERVER and not os.path.exists(os.path.join(binlk[side], os.path.normpath(testlk[side] + '.class'))):
+            return self.checkbins(CLIENT)
         if not os.path.exists(os.path.join(binlk[side], os.path.normpath(testlk[side] + '.class'))):
             return False
         return True
@@ -1436,7 +1438,6 @@ class Commands(object):
                         f.write('"%s"\n' % os.path.abspath(line).replace(os.sep, os.sep + os.sep))
                     else:
                         f.write('"%s"\n' % os.path.abspath(line))
-
                 dirs = '@"%s"' % f.name
 
             classpath = os.pathsep.join(cplk[side])
@@ -2038,6 +2039,9 @@ class Commands(object):
                 sys.exit(1)
 
         for entry in newfiles:
+            if 'commands.py' in entry[0]:
+                self.logger.info('Update to runtime/commands.py found, but disabled due to using custom MCP.')
+                continue
             if entry[3] == 'U':
                 self.logger.info('Retrieving file from server : %s', entry[0])
                 cur_file = os.path.normpath(entry[0])
@@ -2052,7 +2056,6 @@ class Commands(object):
             elif entry[3] == 'D':
                 self.logger.info(
                     'Removing file from local install : %s', entry[0])
-                # Remove file here
 
     def unpackmodifiedclasses(self, side):
         md5lk = {CLIENT: self.md5client, SERVER: self.md5server}
