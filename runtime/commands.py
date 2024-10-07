@@ -2,7 +2,7 @@
 """
 Created on Fri Apr  8 16:36:26 2011
 
-@author: ProfMobius, Searge, Fesh0r, LexManos
+@author: ProfMobius, Searge, Fesh0r, LexManos, dankfmemes
 @version: v1.2
 """
 
@@ -21,6 +21,7 @@ import stat
 import errno
 import shlex
 import platform
+import minecraftdiscovery
 from configparser import ConfigParser
 from hashlib import md5
 from contextlib import closing
@@ -133,6 +134,7 @@ def cmdsplit(args):
 def truncate(text, length):
     return text
 
+
 def csv_header(csvfile):
     fieldnames = []
     if os.path.isfile(csvfile):
@@ -141,165 +143,9 @@ def csv_header(csvfile):
             fieldnames = csvreader.fieldnames
     return set(fieldnames)
 
-class Commands:
+
+class Commands(object):
     """Contains the commands and initialisation for a full mcp run"""
-
-    # Method to get Minecraft Path
-    def getMinecraftPath(self):
-        if sys.platform.startswith('linux'):
-            return os.path.expanduser("~/.minecraft")
-        elif sys.platform.startswith('win'):
-            return os.path.join(os.getenv("APPDATA"), ".minecraft")
-        elif sys.platform.startswith('darwin'):
-            return os.path.expanduser("~/Library/Application Support/minecraft")
-        else:
-            print("Cannot detect platform: %s" % sys.platform)
-            sys.exit()
-
-    # Method to get OS specific native keywords
-    def getNativesKeyword(self):
-        if sys.platform.startswith('linux'):
-            return "linux"
-        elif sys.platform.startswith('win'):
-            return "windows"
-        elif sys.platform.startswith('darwin'):
-            return "osx"
-        else:
-            print("Cannot detect platform: %s" % sys.platform)
-            sys.exit()
-
-    # Method to check if Minecraft directory exists
-    def checkMCDir(self, src, version):
-        if not os.path.exists(src) or not os.path.exists(os.path.join(src, "versions")) or \
-           not os.path.exists(os.path.join(src, "libraries")) or \
-           not os.path.exists(os.path.join(src, "versions", version)):
-            print("ERROR: You should run the launcher at least once before starting MCP")
-            sys.exit()
-
-    # Method to get the JSON filename for a given version
-    def getJSONFilename(self, src, version):
-        return os.path.join(os.path.join(src, "versions"), version, "%s.json" % version)
-
-    # Method to check cache integrity for libraries and natives
-    def checkCacheIntegrity(self, root, jsonfile, osKeyword, version):
-        libraries = self.getLibraries(root, jsonfile, osKeyword)
-        if libraries is None:
-            return False
-
-        for library in libraries.values():
-            if not self.checkLibraryExists(root, library):
-                return False
-
-        if not self.checkMinecraftExists(root, version):
-            return False
-
-        natives = self.getNatives(root, libraries)
-        for native in natives.keys():
-            if not self.checkNativeExists(root, native, version):
-                return False
-
-        return True
-
-    # Method to check if a library exists
-    def checkLibraryExists(self, dst, library):
-        return os.path.exists(os.path.join(dst, library['filename']))
-
-    # Method to check if the Minecraft version exists
-    def checkMinecraftExists(self, root, version):
-        return os.path.exists(os.path.join(root, "versions", version, '%s.jar' % version)) and \
-               os.path.exists(os.path.join(root, "versions", version, '%s.json' % version))
-
-    # Method to check if native files exist
-    def checkNativeExists(self, root, native, version):
-        nativePath = self.getNativePath(root, version)
-        return os.path.exists(os.path.join(nativePath, native))
-
-    # Method to get a list of native files
-    def getNatives(self, root, libraries):
-        nativeList = {}
-        for library in libraries.values():
-            if library['extract']:
-                srcPath = os.path.join(root, library['filename'])
-                jarFile = zipfile.ZipFile(srcPath)
-                fileList = jarFile.namelist()
-
-                for _file in fileList:
-                    exclude = False
-                    for entry in library['exclude']:
-                        if entry in _file:
-                            exclude = True
-                    if not exclude:
-                        nativeList[_file] = library['filename']
-        return nativeList
-
-    # Method to get the native path for a Minecraft version
-    def getNativePath(self, root, version):
-        return os.path.join(root, "versions", version, "%s-natives" % version)
-
-    # Method to get libraries from a Minecraft JSON file
-    def getLibraries(self, root, jsonfile, osKeyword):
-        if not os.path.exists(jsonfile):
-            return None
-
-        try:
-            with open(jsonfile, 'r') as f:
-                jsonFile = json.load(f)
-        except Exception as e:
-            print("Error while parsing the library JSON file: %s" % e)
-            sys.exit()
-
-        mcLibraries = jsonFile['libraries']
-        outLibraries = {}
-
-        for library in mcLibraries:
-            libCononical = library['name'].split(':')[0]
-            libSubdir = library['name'].split(':')[1]
-            libVersion = library['name'].split(':')[2]
-            libPath = libCononical.replace('.', '/')
-            extract = False
-            exclude = []
-
-            if 'rules' in library:
-                passRules = False
-                for rule in library['rules']:
-                    ruleApplies = True
-                    if 'os' in rule:
-                        if rule['os']['name'] != osKeyword:
-                            ruleApplies = False
-                        else:
-                            if osKeyword == "osx":
-                                os_ver = platform.mac_ver()[0]
-                            else:
-                                os_ver = platform.release()
-
-                            if not re.match(rule['os']['version'], os_ver):
-                                ruleApplies = False
-
-                    if ruleApplies:
-                        if rule['action'] == "allow":
-                            passRules = True
-                        else:
-                            passRules = False
-
-                if not passRules:
-                    continue
-
-            if 'natives' in library:
-                libFilename = "%s-%s-%s.jar" % (libSubdir, libVersion, library['natives'][osKeyword])
-            else:
-                libFilename = "%s-%s.jar" % (libSubdir, libVersion)
-
-            if 'extract' in library:
-                extract = True
-                if 'exclude' in library['extract']:
-                    exclude.extend(library['extract']['exclude'])
-
-            libRelativePath = os.path.join("libraries", libPath, libSubdir, libVersion, libFilename)
-            outLibraries[libSubdir] = {
-                'name': library['name'], 'filename': libRelativePath, 'extract': extract, 'exclude': exclude
-            }
-
-        return outLibraries
 
     MCPVersion = '8.09'
     _default_config = 'conf/mcp.cfg'
@@ -624,23 +470,6 @@ class Commands:
         # add the handlers to logger
         self.loggermc.addHandler(chmc)
 
-    def find_minecraft_directory():
-        home_dir = os.path.expanduser("~")
-        
-        if platform.system() == 'Windows':
-            mc_dir = os.path.join(home_dir, 'AppData', 'Roaming', '.minecraft')
-        elif platform.system() == 'Linux':
-            mc_dir = os.path.join(home_dir, '.minecraft')
-        elif platform.system() == 'Darwin':  # macOS
-            mc_dir = os.path.join(home_dir, 'Library', 'Application Support', 'minecraft')
-        else:
-            raise OSError("Unsupported Operating System")
-        
-        if os.path.exists(mc_dir):
-            return mc_dir
-        else:
-            raise FileNotFoundError("Minecraft directory not found")
-
     def readconf(self, workdir, json):
         """Read the configuration file to setup some basic paths"""
         config = ConfigParser()
@@ -747,25 +576,44 @@ class Commands:
         self.md5jarclt = config.get('JAR', 'MD5Client').lower()
         self.md5jarsrv = config.get('JAR', 'MD5Server').lower()
 
-        self.jsonFile = os.path.join(self.dirjars, "versions", self.versionClient, "%s.json" % self.versionClient)
-        osKeyword = self.getNativesKeyword()  # Using the method from the Commands class
+        # if workdir == None:
+        #    mcDir = MinecraftDiscovery.getMinecraftPath()
+        # else:
+        #    mcDir = workdir
+        # osKeyword = MinecraftDiscovery.getNativesKeyword()
+        #
+        # if json == None:
+        #    self.jsonFile = MinecraftDiscovery.getJSONFilename(mcDir, self.versionClient)
+        #    if not os.path.exists(self.jsonFile):
+        #        return False
+        #    mcLibraries = MinecraftDiscovery.getLibraries(mcDir, self.jsonFile, osKeyword)
+        # else:
+        #    self.jsonFile = json
+        #    mcLibraries = MinecraftDiscovery.getLibraries(mcDir, self.jsonFile, osKeyword)
 
-        if workdir is None:
-            if self.checkCacheIntegrity(self.dirjars, self.jsonFile, osKeyword, self.versionClient):
+        self.jsonFile = os.path.join(
+            self.dirjars, "versions", self.versionClient, "%s.json" % self.versionClient)
+        osKeyword = minecraftdiscovery.get_natives_keyword()
+
+        if workdir == None:
+            if minecraftdiscovery.check_cache_integrity(self.dirjars, self.jsonFile, osKeyword, self.versionClient):
                 mcDir = self.dirjars
             else:
-                mcDir = self.getMinecraftPath()  # Using the getMinecraftPath method
+                mcDir = minecraftdiscovery.get_minecraft_path()
         else:
             mcDir = workdir
 
-        if not os.path.exists(self.jsonFile):
-            self.jsonFile = self.getJSONFilename(mcDir, self.versionClient)  # Using the getJSONFilename method
+        if not (os.path.exists(self.jsonFile)):
+            self.jsonFile = minecraftdiscovery.get_json_filename(
+                mcDir, self.versionClient)
 
-        if not os.path.exists(self.jsonFile):
+        if not (os.path.exists(self.jsonFile)):
             return False
 
-        mcLibraries = self.getLibraries(mcDir, self.jsonFile, osKeyword)  # Using the getLibraries method
-        self.dirnatives = os.path.join(self.dirjars, "versions", self.versionClient, "%s-natives" % self.versionClient)
+        mcLibraries = minecraftdiscovery.get_libraries(
+            mcDir, self.jsonFile, osKeyword)
+        self.dirnatives = os.path.join(
+            self.dirjars, "versions", self.versionClient, "%s-natives" % self.versionClient)
 
         jarslwjgl = []
         jarslwjgl.append(os.path.join(
@@ -1086,18 +934,21 @@ class Commands:
         results = []
         if self.osname == 'win':
             if not results:
-                import _winreg
-
-                for flag in [_winreg.KEY_WOW64_64KEY, _winreg.KEY_WOW64_32KEY]:
+                import winreg
+                
+                for flag in [winreg.KEY_WOW64_64KEY, winreg.KEY_WOW64_32KEY]:
                     try:
-                        k = _winreg.OpenKey(_winreg.HKEY_LOCAL_MACHINE, r'Software\JavaSoft\Java Development Kit', 0,
-                                            _winreg.KEY_READ | flag)
-                        version, _ = _winreg.QueryValueEx(k, 'CurrentVersion')
+                        k = winreg.OpenKey(
+                            winreg.HKEY_LOCAL_MACHINE,
+                            r'Software\JavaSoft\Java Development Kit', 0,
+                            winreg.KEY_READ | flag)
+                        version, _ = winreg.QueryValueEx(k, 'CurrentVersion')
                         k.Close()
-                        k = _winreg.OpenKey(_winreg.HKEY_LOCAL_MACHINE,
-                                            r'Software\JavaSoft\Java Development Kit\%s' % version, 0,
-                                            _winreg.KEY_READ | flag)
-                        path, _ = _winreg.QueryValueEx(k, 'JavaHome')
+                        k = winreg.OpenKey(
+                            winreg.HKEY_LOCAL_MACHINE,
+                            r'Software\JavaSoft\Java Development Kit\%s' % version, 0,
+                            winreg.KEY_READ | flag)
+                        path, _ = winreg.QueryValueEx(k, 'JavaHome')
                         k.Close()
                         path = os.path.join(str(path), 'bin')
                         self.runcmd('"%s" -version' %
@@ -1105,6 +956,33 @@ class Commands:
                         results.append(path)
                     except (CalledProcessError, OSError):
                         pass
+                
+                for flag in [winreg.KEY_WOW64_64KEY, winreg.KEY_WOW64_32KEY]:
+                    try:
+                        k = winreg.OpenKey(
+                            winreg.HKEY_LOCAL_MACHINE,
+                            r'Software\Eclipse Adoptium\JDK', 0,
+                            winreg.KEY_READ | flag)
+                        version_count = winreg.QueryInfoKey(k)[0]  # Number of subkeys (versions)
+                        
+                        # Iterate over all installed versions
+                        for i in range(version_count):
+                            version = winreg.EnumKey(k, i)
+                            k_version = winreg.OpenKey(
+                                winreg.HKEY_LOCAL_MACHINE,
+                                r'Software\Eclipse Adoptium\JDK\%s' % version, 0,
+                                winreg.KEY_READ | flag)
+                            path, _ = winreg.QueryValueEx(k_version, 'Home')
+                            k_version.Close()
+
+                            path = os.path.join(str(path), 'bin')
+                            self.runcmd('"%s" -version' %
+                                        os.path.join(path, 'javac'), quiet=True)
+                            results.append(path)
+                        k.Close()
+                    except (CalledProcessError, OSError):
+                        pass
+                    
             if not results:
                 try:
                     self.runcmd('javac -version', quiet=True)
@@ -1580,22 +1458,26 @@ class Commands:
             all_files = True
             append_pattern = False
 
-        pkglist = filterdirs(pathsrclk[side], '*.java', append_pattern=append_pattern, all_files=all_files)
+        pkglist = filterdirs(
+            pathsrclk[side], '*.java', append_pattern=append_pattern, all_files=all_files)
 
         if self.cmdrecompscala:
             pkglistscala = pkglist[:]
-            pkglistscala.extend(filterdirs(pathsrclk[side], '*.scala', append_pattern=append_pattern, all_files=all_files))
+            pkglistscala.extend(filterdirs(
+                pathsrclk[side], '*.scala', append_pattern=append_pattern, all_files=all_files))
 
             with NamedTemporaryFile(mode='w', suffix='.txt', prefix='scala_src_path_', delete=False) as f:
                 for line in pkglistscala:
                     if os.sep == '\\':
-                        f.write('"%s"\n' % os.path.abspath(line).replace(os.sep, os.sep + os.sep))
+                        f.write('"%s"\n' % os.path.abspath(
+                            line).replace(os.sep, os.sep + os.sep))
                     else:
                         f.write('"%s"\n' % os.path.abspath(line))
                 dirs = '@"%s"' % f.name
 
             classpath = os.pathsep.join(cplk[side])
-            forkcmd = self.cmdrecompscala.format(classpath=classpath, sourcepath=pathsrclk[side], outpath=pathbinlk[side], pkgs=dirs)
+            forkcmd = self.cmdrecompscala.format(
+                classpath=classpath, sourcepath=pathsrclk[side], outpath=pathbinlk[side], pkgs=dirs)
 
             try:
                 self.runcmd(forkcmd, log_file=pathlog[side])
@@ -1607,7 +1489,8 @@ class Commands:
                     if line.strip():
                         line = line.decode('utf-8')
                         if 'jvm-1.6' in line:
-                            self.logger.error('=== Your scala version is out of date, update to at least 2.10.0 ===')
+                            self.logger.error(
+                                '=== Your scala version is out of date, update to at least 2.10.0 ===')
                         if line[0] != '[' and not line.startswith('Note'):
                             self.logger.error(line)
                             if '^' in line:
@@ -1649,11 +1532,13 @@ class Commands:
             with open(log_file, 'w') as log:
                 log.write(output.decode('utf-8'))  # Convert bytes to string
         if not quiet:
-            for line in output.decode('utf-8').splitlines():  # Convert bytes to string
+            # Convert bytes to string
+            for line in output.decode('utf-8').splitlines():
                 self.logger.debug(line)
         if process.returncode:
             if not quiet:
-                self.logger.error("'%s' failed : %d", truncate(forkcmd, 100), process.returncode)
+                self.logger.error("'%s' failed : %d", truncate(
+                    forkcmd, 100), process.returncode)
             if check_return:
                 raise CalledProcessError(process.returncode, forkcmd, output)
         return output
@@ -2194,7 +2079,8 @@ class Commands:
 
         for entry in newfiles:
             if 'commands.py' in entry[0]:
-                self.logger.info('Update to runtime/commands.py found, but disabled due to using custom MCP.')
+                self.logger.info(
+                    'Update to runtime/commands.py found, but disabled due to using custom MCP.')
                 continue
             if entry[3] == 'U':
                 self.logger.info('Retrieving file from server : %s', entry[0])
