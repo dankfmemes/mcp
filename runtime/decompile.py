@@ -7,9 +7,12 @@ Created on Fri Apr  8 16:54:36 2011
 """
 
 import sys
-import logging
-from optparse import OptionParser
+import os
 
+runtime_dir = os.path.join(os.path.dirname(__file__), 'runtime')
+sys.path.append(runtime_dir)
+
+from optparse import OptionParser
 from commands import Commands, CLIENT, SERVER, CalledProcessError
 from mcp import decompile_side, updatemd5_side
 import clientCopy
