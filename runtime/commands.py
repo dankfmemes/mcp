@@ -26,6 +26,8 @@ from configparser import ConfigParser
 from hashlib import md5
 from contextlib import closing
 from textwrap import TextWrapper
+from tempfile import NamedTemporaryFile
+from subprocess import CalledProcessError
 
 from filehandling import writesrgsfromcsvs, parse_srg
 from pylibs.annotate_gl_constants import annotate_file
@@ -131,7 +133,6 @@ def cmdsplit(args):
 #    return text
 def truncate(text, length):
     return text
-
 
 def csv_header(csvfile):
     fieldnames = []
@@ -1416,24 +1417,31 @@ class Commands(object):
         if not os.path.exists(pathbinlk[side]):
             os.makedirs(pathbinlk[side])
 
-        # HINT: We create the list of source directories based on the list of packages
-        # on windows we just pass wildcards, otherwise we pass the full file list
         if self.osname == 'win':
             all_files = False
             append_pattern = True
         else:
             all_files = True
             append_pattern = False
-        pkglist = filterdirs(
-            pathsrclk[side], '*.java', append_pattern=append_pattern, all_files=all_files)
-        if self.cmdrecompscala:  # Compile scala before java as scala scans java files, but not vice-versa
+
+        pkglist = filterdirs(pathsrclk[side], '*.java', append_pattern=append_pattern, all_files=all_files)
+
+        if self.cmdrecompscala:
             pkglistscala = pkglist[:]
-            pkglistscala.extend(filterdirs(
-                pathsrclk[side], '*.scala', append_pattern=append_pattern, all_files=all_files))
-            dirs = ' '.join(pkglistscala)
+            pkglistscala.extend(filterdirs(pathsrclk[side], '*.scala', append_pattern=append_pattern, all_files=all_files))
+
+            with NamedTemporaryFile(mode='w', suffix='.txt', prefix='scala_src_path_', delete=False) as f:
+                for line in pkglistscala:
+                    if os.sep == '\\':
+                        f.write('"%s"\n' % os.path.abspath(line).replace(os.sep, os.sep + os.sep))
+                    else:
+                        f.write('"%s"\n' % os.path.abspath(line))
+
+                dirs = '@"%s"' % f.name
+
             classpath = os.pathsep.join(cplk[side])
-            forkcmd = self.cmdrecompscala.format(
-                classpath=classpath, sourcepath=pathsrclk[side], outpath=pathbinlk[side], pkgs=dirs)
+            forkcmd = self.cmdrecompscala.format(classpath=classpath, sourcepath=pathsrclk[side], outpath=pathbinlk[side], pkgs=dirs)
+
             try:
                 self.runcmd(forkcmd, log_file=pathlog[side])
             except CalledProcessError as ex:
@@ -1442,35 +1450,18 @@ class Commands(object):
                 self.logger.error('')
                 for line in ex.output.splitlines():
                     if line.strip():
-                        if line.find("jvm-1.6") != -1:
-                            self.logger.error(
-                                ' === Your scala version is out of date, update to at least 2.10.0 ===')
-                        if line[0] != '[' and line[0:4] != 'Note':
+                        line = line.decode('utf-8')
+                        if 'jvm-1.6' in line:
+                            self.logger.error('=== Your scala version is out of date, update to at least 2.10.0 ===')
+                        if line[0] != '[' and not line.startswith('Note'):
                             self.logger.error(line)
                             if '^' in line:
                                 self.logger.error('')
-                self.logger.error('================================')
+                self.logger.error('==================')
                 self.logger.error('')
                 raise
-        dirs = ' '.join(pkglist)
-        classpath = os.pathsep.join(cplk[side])
-        forkcmd = self.cmdrecomp.format(classpath=classpath, sourcepath=pathsrclk[side], outpath=pathbinlk[side], pkgs=dirs)
-        try:
-            self.runcmd(forkcmd, log_file=pathlog[side])
-        except CalledProcessError as ex:
-            self.logger.error('')
-            self.logger.error('== ERRORS FOUND in JAVA CODE ==')
-            self.logger.error('')
-            for line in ex.output.splitlines():
-                if line.strip():
-                    line = line.decode('utf-8')  # Decode bytes to string
-                    if line[0] != '[' and line[0:4] != 'Note':
-                        self.logger.error(line)
-                        if '^' in line:
-                            self.logger.error('')
-            self.logger.error('==================')
-            self.logger.error('')
-            raise
+            finally:
+                os.unlink(f.name)
 
     def startserver(self, mainclass, extraargs):
         classpath = [self.binserver] + self.cpathserver
