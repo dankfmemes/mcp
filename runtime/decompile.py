@@ -9,7 +9,7 @@ Created on Fri Apr  8 16:54:36 2011
 import sys
 import os
 
-runtime_dir = os.path.join(os.path.dirname(__file__), 'runtime')
+runtime_dir = os.path.dirname(__file__)
 sys.path.append(runtime_dir)
 
 from optparse import OptionParser
