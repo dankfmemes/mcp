@@ -21,7 +21,6 @@ import stat
 import errno
 import shlex
 import platform
-import MinecraftDiscovery
 from configparser import ConfigParser
 from hashlib import md5
 from contextlib import closing
@@ -142,8 +141,165 @@ def csv_header(csvfile):
             fieldnames = csvreader.fieldnames
     return set(fieldnames)
 
-class Commands(object):
+class Commands:
     """Contains the commands and initialisation for a full mcp run"""
+
+    # Method to get Minecraft Path
+    def getMinecraftPath(self):
+        if sys.platform.startswith('linux'):
+            return os.path.expanduser("~/.minecraft")
+        elif sys.platform.startswith('win'):
+            return os.path.join(os.getenv("APPDATA"), ".minecraft")
+        elif sys.platform.startswith('darwin'):
+            return os.path.expanduser("~/Library/Application Support/minecraft")
+        else:
+            print("Cannot detect platform: %s" % sys.platform)
+            sys.exit()
+
+    # Method to get OS specific native keywords
+    def getNativesKeyword(self):
+        if sys.platform.startswith('linux'):
+            return "linux"
+        elif sys.platform.startswith('win'):
+            return "windows"
+        elif sys.platform.startswith('darwin'):
+            return "osx"
+        else:
+            print("Cannot detect platform: %s" % sys.platform)
+            sys.exit()
+
+    # Method to check if Minecraft directory exists
+    def checkMCDir(self, src, version):
+        if not os.path.exists(src) or not os.path.exists(os.path.join(src, "versions")) or \
+           not os.path.exists(os.path.join(src, "libraries")) or \
+           not os.path.exists(os.path.join(src, "versions", version)):
+            print("ERROR: You should run the launcher at least once before starting MCP")
+            sys.exit()
+
+    # Method to get the JSON filename for a given version
+    def getJSONFilename(self, src, version):
+        return os.path.join(os.path.join(src, "versions"), version, "%s.json" % version)
+
+    # Method to check cache integrity for libraries and natives
+    def checkCacheIntegrity(self, root, jsonfile, osKeyword, version):
+        libraries = self.getLibraries(root, jsonfile, osKeyword)
+        if libraries is None:
+            return False
+
+        for library in libraries.values():
+            if not self.checkLibraryExists(root, library):
+                return False
+
+        if not self.checkMinecraftExists(root, version):
+            return False
+
+        natives = self.getNatives(root, libraries)
+        for native in natives.keys():
+            if not self.checkNativeExists(root, native, version):
+                return False
+
+        return True
+
+    # Method to check if a library exists
+    def checkLibraryExists(self, dst, library):
+        return os.path.exists(os.path.join(dst, library['filename']))
+
+    # Method to check if the Minecraft version exists
+    def checkMinecraftExists(self, root, version):
+        return os.path.exists(os.path.join(root, "versions", version, '%s.jar' % version)) and \
+               os.path.exists(os.path.join(root, "versions", version, '%s.json' % version))
+
+    # Method to check if native files exist
+    def checkNativeExists(self, root, native, version):
+        nativePath = self.getNativePath(root, version)
+        return os.path.exists(os.path.join(nativePath, native))
+
+    # Method to get a list of native files
+    def getNatives(self, root, libraries):
+        nativeList = {}
+        for library in libraries.values():
+            if library['extract']:
+                srcPath = os.path.join(root, library['filename'])
+                jarFile = zipfile.ZipFile(srcPath)
+                fileList = jarFile.namelist()
+
+                for _file in fileList:
+                    exclude = False
+                    for entry in library['exclude']:
+                        if entry in _file:
+                            exclude = True
+                    if not exclude:
+                        nativeList[_file] = library['filename']
+        return nativeList
+
+    # Method to get the native path for a Minecraft version
+    def getNativePath(self, root, version):
+        return os.path.join(root, "versions", version, "%s-natives" % version)
+
+    # Method to get libraries from a Minecraft JSON file
+    def getLibraries(self, root, jsonfile, osKeyword):
+        if not os.path.exists(jsonfile):
+            return None
+
+        try:
+            with open(jsonfile, 'r') as f:
+                jsonFile = json.load(f)
+        except Exception as e:
+            print("Error while parsing the library JSON file: %s" % e)
+            sys.exit()
+
+        mcLibraries = jsonFile['libraries']
+        outLibraries = {}
+
+        for library in mcLibraries:
+            libCononical = library['name'].split(':')[0]
+            libSubdir = library['name'].split(':')[1]
+            libVersion = library['name'].split(':')[2]
+            libPath = libCononical.replace('.', '/')
+            extract = False
+            exclude = []
+
+            if 'rules' in library:
+                passRules = False
+                for rule in library['rules']:
+                    ruleApplies = True
+                    if 'os' in rule:
+                        if rule['os']['name'] != osKeyword:
+                            ruleApplies = False
+                        else:
+                            if osKeyword == "osx":
+                                os_ver = platform.mac_ver()[0]
+                            else:
+                                os_ver = platform.release()
+
+                            if not re.match(rule['os']['version'], os_ver):
+                                ruleApplies = False
+
+                    if ruleApplies:
+                        if rule['action'] == "allow":
+                            passRules = True
+                        else:
+                            passRules = False
+
+                if not passRules:
+                    continue
+
+            if 'natives' in library:
+                libFilename = "%s-%s-%s.jar" % (libSubdir, libVersion, library['natives'][osKeyword])
+            else:
+                libFilename = "%s-%s.jar" % (libSubdir, libVersion)
+
+            if 'extract' in library:
+                extract = True
+                if 'exclude' in library['extract']:
+                    exclude.extend(library['extract']['exclude'])
+
+            libRelativePath = os.path.join("libraries", libPath, libSubdir, libVersion, libFilename)
+            outLibraries[libSubdir] = {
+                'name': library['name'], 'filename': libRelativePath, 'extract': extract, 'exclude': exclude
+            }
+
+        return outLibraries
 
     MCPVersion = '8.09'
     _default_config = 'conf/mcp.cfg'
@@ -468,6 +624,23 @@ class Commands(object):
         # add the handlers to logger
         self.loggermc.addHandler(chmc)
 
+    def find_minecraft_directory():
+        home_dir = os.path.expanduser("~")
+        
+        if platform.system() == 'Windows':
+            mc_dir = os.path.join(home_dir, 'AppData', 'Roaming', '.minecraft')
+        elif platform.system() == 'Linux':
+            mc_dir = os.path.join(home_dir, '.minecraft')
+        elif platform.system() == 'Darwin':  # macOS
+            mc_dir = os.path.join(home_dir, 'Library', 'Application Support', 'minecraft')
+        else:
+            raise OSError("Unsupported Operating System")
+        
+        if os.path.exists(mc_dir):
+            return mc_dir
+        else:
+            raise FileNotFoundError("Minecraft directory not found")
+
     def readconf(self, workdir, json):
         """Read the configuration file to setup some basic paths"""
         config = ConfigParser()
@@ -574,44 +747,25 @@ class Commands(object):
         self.md5jarclt = config.get('JAR', 'MD5Client').lower()
         self.md5jarsrv = config.get('JAR', 'MD5Server').lower()
 
-        # if workdir == None:
-        #    mcDir = MinecraftDiscovery.getMinecraftPath()
-        # else:
-        #    mcDir = workdir
-        # osKeyword = MinecraftDiscovery.getNativesKeyword()
-        #
-        # if json == None:
-        #    self.jsonFile = MinecraftDiscovery.getJSONFilename(mcDir, self.versionClient)
-        #    if not os.path.exists(self.jsonFile):
-        #        return False
-        #    mcLibraries = MinecraftDiscovery.getLibraries(mcDir, self.jsonFile, osKeyword)
-        # else:
-        #    self.jsonFile = json
-        #    mcLibraries = MinecraftDiscovery.getLibraries(mcDir, self.jsonFile, osKeyword)
+        self.jsonFile = os.path.join(self.dirjars, "versions", self.versionClient, "%s.json" % self.versionClient)
+        osKeyword = self.getNativesKeyword()  # Using the method from the Commands class
 
-        self.jsonFile = os.path.join(
-            self.dirjars, "versions", self.versionClient, "%s.json" % self.versionClient)
-        osKeyword = MinecraftDiscovery.getNativesKeyword()
-
-        if workdir == None:
-            if MinecraftDiscovery.checkCacheIntegrity(self.dirjars, self.jsonFile, osKeyword, self.versionClient):
+        if workdir is None:
+            if self.checkCacheIntegrity(self.dirjars, self.jsonFile, osKeyword, self.versionClient):
                 mcDir = self.dirjars
             else:
-                mcDir = MinecraftDiscovery.getMinecraftPath()
+                mcDir = self.getMinecraftPath()  # Using the getMinecraftPath method
         else:
             mcDir = workdir
 
-        if not (os.path.exists(self.jsonFile)):
-            self.jsonFile = MinecraftDiscovery.getJSONFilename(
-                mcDir, self.versionClient)
+        if not os.path.exists(self.jsonFile):
+            self.jsonFile = self.getJSONFilename(mcDir, self.versionClient)  # Using the getJSONFilename method
 
-        if not (os.path.exists(self.jsonFile)):
+        if not os.path.exists(self.jsonFile):
             return False
 
-        mcLibraries = MinecraftDiscovery.getLibraries(
-            mcDir, self.jsonFile, osKeyword)
-        self.dirnatives = os.path.join(
-            self.dirjars, "versions", self.versionClient, "%s-natives" % self.versionClient)
+        mcLibraries = self.getLibraries(mcDir, self.jsonFile, osKeyword)  # Using the getLibraries method
+        self.dirnatives = os.path.join(self.dirjars, "versions", self.versionClient, "%s-natives" % self.versionClient)
 
         jarslwjgl = []
         jarslwjgl.append(os.path.join(
