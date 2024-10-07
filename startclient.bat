@@ -3,18 +3,19 @@
 if "%VIRTUAL_ENV%"=="" (
     echo Activating virtual environment...
     
-    if not exist "env\Scripts\activate.bat" (
+    if not exist "env\" (
         echo Virtual environment not found!
         exit /b 1
     )
 
-    call env\Scripts\activate.bat
+    call env\Scripts\activate
 ) else (
     echo Already in a virtual environment: %VIRTUAL_ENV%
 )
 
 if not exist "runtime\startclient.py" (
     echo Python script not found!
+    deactivate
     exit /b 1
 )
 
