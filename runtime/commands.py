@@ -225,12 +225,17 @@ class Commands(object):
 
         return None
 
-    def checkcommand(self, name, command, java=False, single_line=False, check_return=True, error=True):
+    def checkcommand(self, name, command, java=False, single_line=False, check_return=True, error=True, detailed_logging=False):
         self.logger.debug("# %s: '%s'", name, command)
         try:
             if java:
                 command = '%s -jar %s' % (self.cmdjava, command)
             output = self.runcmd(command, quiet=True, check_return=check_return)
+
+            if detailed_logging and name == "mcinjector":
+                # Log detailed output specifically for mcinjector
+                self.logger.info("Detailed mcinjector output: %s", output)
+
             if single_line:
                 output = output.splitlines()[0]
             output = output.strip()
@@ -245,6 +250,9 @@ class Commands(object):
         except CalledProcessError as ex:
             output = ex.output
             output = output.strip()
+            if detailed_logging and name == "mcinjector":
+                self.logger.info("Detailed mcinjector error output: %s", output)
+            
             self.logger.debug("Command Error Output: %s", output)
             if error:
                 self.logger.error('!! %s check FAILED !!', name)
@@ -275,8 +283,7 @@ class Commands(object):
         self.exceptor = os.path.normpath(
             self.config.get('COMMANDS', 'Exceptor'))
         if verify:
-            self.checkcommand('mcinjector', '%s --version' %
-                              self.exceptor, java=True)
+            self.checkcommand('mcinjector', '%s --version' % self.exceptor, java=True)
 
         # verify below along with jad if required
         self.jadretro = os.path.normpath(
@@ -321,23 +328,20 @@ class Commands(object):
             self.astyle = os.path.normpath(self.config.get(
                 'COMMANDS', 'AStyle_%s' % self.osname))
             if verify:
-                self.has_astyle = self.checkcommand(
-                    'astyle', '%s --version' % self.astyle, error=False)
+                self.has_astyle = self.checkcommand('astyle', '%s --version' % self.astyle, error=False)
 
         # only check jad and jadretro if we can use it
         if self.jad:
             if verify:
                 has_jadretro = self.checkcommand('jadretro', '%s' % self.jadretro, java=True, single_line=True,
                                                  error=False)
-                has_jad = self.checkcommand('jad', '%s' % self.jad, single_line=True, check_return=False,
-                                            error=False)
+                has_jad = self.checkcommand('jad', '%s' % self.jad, single_line=True, check_return=False, error=False)
                 self.has_jad = has_jad and has_jadretro
 
         self.fernflower = os.path.normpath(
             self.config.get('COMMANDS', 'Fernflower'))
         if verify:
-            self.has_ff = self.checkcommand('fernflower', '%s' % self.fernflower, java=True, single_line=True,
-                                            error=False)
+            self.has_ff = self.checkcommand('fernflower', '%s' % self.fernflower, java=True, single_line=True, error=False)
 
         # check requirements
         # windows: all requirements supplied
