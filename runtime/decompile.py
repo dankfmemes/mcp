@@ -8,6 +8,7 @@ Created on Fri Apr  8 16:54:36 2011
 
 import sys
 import os
+import logging
 
 runtime_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'runtime'))
 sys.path.append(runtime_dir)
