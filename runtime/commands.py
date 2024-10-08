@@ -230,7 +230,7 @@ class Commands(object):
         try:
             if java:
                 command = '%s -jar %s' % (self.cmdjava, command)
-            output = self.runcmd(command, quiet=True, check_return=check_return)
+            output = self.runcmd(command, check_return=check_return)
 
             if detailed_logging and name == "mcinjector":
                 # Log detailed output specifically for mcinjector
@@ -1553,22 +1553,24 @@ class Commands(object):
         if not quiet:
             self.logger.debug("runmc: '%s'", truncate(forkcmd, 500))
             self.logger.debug("shlex: %s", truncate(str(forklist), 500))
+            
         output = ''
         process = subprocess.Popen(
-            forklist, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1)
+            forklist, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1
+        )
         while process.poll() is None:
             line = process.stdout.readline()
             if line:
                 line = line.rstrip()
                 output += line
-                if not quiet:
-                    self.loggermc.debug(line)
+                self.loggermc.debug(line)
+                
         if process.returncode:
             if not quiet:
-                self.logger.error("'%s' failed : %d", truncate(
-                    forkcmd, 100), process.returncode)
+                self.logger.error("'%s' failed : %d", truncate(forkcmd, 100), process.returncode)
             if check_return:
                 raise CalledProcessError(process.returncode, forkcmd, output)
+        
         return output
 
     def extractjar(self, side):
