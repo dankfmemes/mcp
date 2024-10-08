@@ -14,9 +14,8 @@ sys.path.append(runtime_dir)
 
 from optparse import OptionParser
 from commands import Commands, CLIENT, SERVER, CalledProcessError
-from mcp import decompile_side, updatemd5_side
+from decompile import decompile_side, updatemd5_side
 import clientCopy
-
 
 def main():
     parser = OptionParser(version='MCP %s' % Commands.fullversion())
