@@ -1453,9 +1453,12 @@ class Commands(object):
         pathsrclk = {CLIENT: self.srcclient, SERVER: self.srcserver}
         pathlog = {CLIENT: self.clientrecomplog, SERVER: self.serverrecomplog}
 
+        # Ensure output directory exists
         if not os.path.exists(pathbinlk[side]):
+            self.logger.info(f"Creating output directory: {pathbinlk[side]}")
             os.makedirs(pathbinlk[side])
 
+        # Adjust file filtering for OS
         if self.osname == 'win':
             all_files = False
             append_pattern = True
@@ -1463,48 +1466,57 @@ class Commands(object):
             all_files = True
             append_pattern = False
 
-        pkglist = filterdirs(
-            pathsrclk[side], '*.java', append_pattern=append_pattern, all_files=all_files)
-
+        # Collect Java and Scala source files
+        pkglist = filterdirs(pathsrclk[side], '*.java', append_pattern=append_pattern, all_files=all_files)
+        
         if self.cmdrecompscala:
             pkglistscala = pkglist[:]
-            pkglistscala.extend(filterdirs(
-                pathsrclk[side], '*.scala', append_pattern=append_pattern, all_files=all_files))
+            pkglistscala.extend(filterdirs(pathsrclk[side], '*.scala', append_pattern=append_pattern, all_files=all_files))
 
-            with NamedTemporaryFile(mode='w', suffix='.txt', prefix='scala_src_path_', delete=False) as f:
-                for line in pkglistscala:
-                    if os.sep == '\\':
-                        f.write('"%s"\n' % os.path.abspath(
-                            line).replace(os.sep, os.sep + os.sep))
-                    else:
-                        f.write('"%s"\n' % os.path.abspath(line))
-                dirs = '@"%s"' % f.name
-
-            classpath = os.pathsep.join(cplk[side])
-            forkcmd = self.cmdrecompscala.format(
-                classpath=classpath, sourcepath=pathsrclk[side], outpath=pathbinlk[side], pkgs=dirs)
-
+            # Use a temporary file to store the Scala source paths
             try:
+                with NamedTemporaryFile(mode='w', suffix='.txt', prefix='scala_src_path_', delete=False) as f:
+                    for line in pkglistscala:
+                        if os.sep == '\\':
+                            f.write('"%s"\n' % os.path.abspath(line).replace(os.sep, os.sep + os.sep))
+                        else:
+                            f.write('"%s"\n' % os.path.abspath(line))
+                    dirs = '@"%s"' % f.name
+
+                # Generate the classpath and recompile command
+                classpath = os.pathsep.join(cplk[side])
+                forkcmd = self.cmdrecompscala.format(
+                    classpath=classpath, 
+                    sourcepath=pathsrclk[side], 
+                    outpath=pathbinlk[side], 
+                    pkgs=dirs
+                )
+
+                # Log and execute the command
+                self.logger.info(f"Recompiling Scala sources with command: {forkcmd}")
                 self.runcmd(forkcmd, log_file=pathlog[side])
+
             except CalledProcessError as ex:
                 self.logger.error('')
                 self.logger.error('== ERRORS FOUND in SCALA CODE ==')
                 self.logger.error('')
                 for line in ex.output.splitlines():
-                    if line.strip():
-                        line = line.decode('utf-8')
-                        if 'jvm-1.6' in line:
-                            self.logger.error(
-                                '=== Your scala version is out of date, update to at least 2.10.0 ===')
-                        if line[0] != '[' and not line.startswith('Note'):
-                            self.logger.error(line)
-                            if '^' in line:
-                                self.logger.error('')
+                    line = line.decode('utf-8').strip()
+                    if 'jvm-1.6' in line:
+                        self.logger.error('=== Your Scala version is out of date, update to at least 2.10.0 ===')
+                    elif line and not line.startswith('[') and not line.startswith('Note'):
+                        self.logger.error(line)
+                        if '^' in line:
+                            self.logger.error('')  # Print a newline for better visibility
                 self.logger.error('==================')
                 self.logger.error('')
                 raise
             finally:
-                os.unlink(f.name)
+                # Attempt to delete the temp file and log if it fails
+                try:
+                    os.unlink(f.name)
+                except OSError as e:
+                    self.logger.warning(f"Could not delete temporary file: {f.name}. Error: {e}")
 
     def startserver(self, mainclass, extraargs):
         classpath = [self.binserver] + self.cpathserver
