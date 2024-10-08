@@ -230,25 +230,26 @@ class Commands(object):
         try:
             if java:
                 command = '%s -jar %s' % (self.cmdjava, command)
-            output = self.runcmd(command, quiet=True,
-                                 check_return=check_return)
+            output = self.runcmd(command, quiet=True, check_return=check_return)
             if single_line:
                 output = output.splitlines()[0]
             output = output.strip()
-            self.logger.debug(output)
+            self.logger.debug("Command Output: %s", output)
             return True
         except OSError as ex:
             if error:
                 self.logger.error('!! %s check FAILED !!', name)
                 self.logger.error(ex)
+                self.logger.error("Command executed was: '%s'", command)
                 sys.exit(1)
         except CalledProcessError as ex:
             output = ex.output
             output = output.strip()
-            self.logger.debug(output)
+            self.logger.debug("Command Error Output: %s", output)
             if error:
                 self.logger.error('!! %s check FAILED !!', name)
                 self.logger.error(ex)
+                self.logger.error("Command executed was: '%s'", command)
                 sys.exit(1)
         return False
 
