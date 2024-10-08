@@ -1,3 +1,6 @@
+/jars/assets/
+/jars/libraries/
+/jars/versions/
 /bin/
 /lib/
 /logs/
@@ -5,8 +8,10 @@
 /src/
 *.pyc
 *.pyo
+*.backup
 __pycache__/
 /env/
 /venv/
 /temp/
 /recompiled/
+/conf.bak/
